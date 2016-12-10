@@ -21,11 +21,11 @@ http://arxiv.org/abs/1409.2329
 
 There are 3 supported model configurations:
 ===========================================
-| config | epochs | train | valid    | test
+|config  |epochs|train|valid  |test
 ===========================================
-| small    | 13         | 37.99 | 121.39 | 115.91
-| medium | 39         | 48.45 |    86.16 |    82.07
-| large    | 55         | 37.87 |    82.62 |    78.29
+| small  | 13 | 37.99 |121.39 |115.91
+| medium | 39 | 48.45 | 86.16 |82.07
+| large  | 55 | 37.87 | 82.62 |78.29
 The exact results may vary depending on the random initialization.
 
 The hyperparameters used in the model:
@@ -66,21 +66,81 @@ from tensorflow.models.rnn.ptb import reader
 flags = tf.flags
 logging = tf.logging
 
-flags.DEFINE_string(
-        "model", "small",
-        "A type of model. Possible options are: small, medium, large.")
-flags.DEFINE_string("data_path", None,
-                                        "Where the training/test data is stored.")
-flags.DEFINE_string("save_path", None,
-                                        "Model output directory.")
-flags.DEFINE_bool("use_fp16", False,
-                                    "Train using 16-bit floats instead of 32bit floats")
+flags.DEFINE_string( "model", "small", "A type of model. Possible options are: small, medium, large.")
+flags.DEFINE_string("data_path", None "Where the training/test data is stored.")
+flags.DEFINE_string("save_path", None, "Model output directory.")
+flags.DEFINE_bool("use_fp16", False, "Train using 16-bit floats instead of 32bit floats")
 
 FLAGS = flags.FLAGS
 
 
 def data_type():
     return tf.float16 if FLAGS.use_fp16 else tf.float32
+
+
+class SmallConfig(object):
+    """Small config."""
+    init_scale = 0.1
+    learning_rate = 1.0
+    max_grad_norm = 5
+    num_layers = 2
+    num_steps = 20
+    hidden_size = 200
+    max_epoch = 4
+    max_max_epoch = 13
+    keep_prob = 1.0
+    lr_decay = 0.5
+    batch_size = 20
+    vocab_size = 10000
+
+
+class MediumConfig(object):
+    """Medium config."""
+    init_scale = 0.05
+    learning_rate = 1.0
+    max_grad_norm = 5
+    num_layers = 2
+    num_steps = 35
+    hidden_size = 650
+    max_epoch = 6
+    max_max_epoch = 39
+    keep_prob = 0.5
+    lr_decay = 0.8
+    batch_size = 20
+    vocab_size = 10000
+
+
+class LargeConfig(object):
+    """Large config."""
+    init_scale = 0.04
+    learning_rate = 1.0
+    max_grad_norm = 10
+    num_layers = 2
+    num_steps = 35
+    hidden_size = 1500
+    max_epoch = 14
+    max_max_epoch = 55
+    keep_prob = 0.35
+    lr_decay = 1 / 1.15
+    batch_size = 20
+    vocab_size = 10000
+
+
+class TestConfig(object):
+    """Tiny config, for testing."""
+    init_scale = 0.1
+    learning_rate = 1.0
+    max_grad_norm = 1
+    num_layers = 1
+    num_steps = 2
+    hidden_size = 2
+    max_epoch = 1
+    max_max_epoch = 1
+    keep_prob = 1.0
+    lr_decay = 0.5
+    batch_size = 20
+    vocab_size = 100000
+    break_early = True
 
 
 class PTBInput(object):
@@ -197,69 +257,6 @@ class PTBModel(object):
         return self._train_op
 
 
-class SmallConfig(object):
-    """Small config."""
-    init_scale = 0.1
-    learning_rate = 1.0
-    max_grad_norm = 5
-    num_layers = 2
-    num_steps = 20
-    hidden_size = 200
-    max_epoch = 4
-    max_max_epoch = 13
-    keep_prob = 1.0
-    lr_decay = 0.5
-    batch_size = 20
-    vocab_size = 10000
-
-
-class MediumConfig(object):
-    """Medium config."""
-    init_scale = 0.05
-    learning_rate = 1.0
-    max_grad_norm = 5
-    num_layers = 2
-    num_steps = 35
-    hidden_size = 650
-    max_epoch = 6
-    max_max_epoch = 39
-    keep_prob = 0.5
-    lr_decay = 0.8
-    batch_size = 20
-    vocab_size = 10000
-
-
-class LargeConfig(object):
-    """Large config."""
-    init_scale = 0.04
-    learning_rate = 1.0
-    max_grad_norm = 10
-    num_layers = 2
-    num_steps = 35
-    hidden_size = 1500
-    max_epoch = 14
-    max_max_epoch = 55
-    keep_prob = 0.35
-    lr_decay = 1 / 1.15
-    batch_size = 20
-    vocab_size = 10000
-
-
-class TestConfig(object):
-    """Tiny config, for testing."""
-    init_scale = 0.1
-    learning_rate = 1.0
-    max_grad_norm = 1
-    num_layers = 1
-    num_steps = 2
-    hidden_size = 2
-    max_epoch = 1
-    max_max_epoch = 1
-    keep_prob = 1.0
-    lr_decay = 0.5
-    batch_size = 20
-    vocab_size = 100000
-    break_early = True
 
 
 def run_epoch(session, model, eval_op=None, verbose=False):
@@ -361,7 +358,6 @@ def main(_):
             print("Test Perplexity: %.3f" % test_perplexity)
             #writer.add_summary(test_perplexity, i)
             #writer.add_summary(train_perplexity, i)
-            print(FLAGS.save_path)
             if FLAGS.save_path:
                 print("Saving model to %s." % FLAGS.save_path)
                 sv.saver.save(session, FLAGS.save_path, global_step=sv.global_step)
