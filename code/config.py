@@ -21,10 +21,10 @@ class SmallGenConfig(object):
     learning_rate = 1.0
     max_grad_norm = 5
     num_layers = 2
-    num_steps = 1 # this is the main difference
+    num_steps = 1  # this is the main difference
     hidden_size = 200
-    max_epoch = 4
-    max_max_epoch = 13
+    max_epoch = 1
+    max_max_epoch = 3
     keep_prob = 1.0
     lr_decay = 0.5
     batch_size = 1

@@ -31,28 +31,28 @@ def sample(a, temperature=1.):
     return np.argmax(np.random.multinomial(1, a, 1))
 
 
-def generate_text(train_path, model_path, num_sentences=3):
-    gen_config = SmallGenConfig()
+def generate_text(train_path, model_path, num_sentences=3, gen_config=SmallConfig):
     raw_data = reader.ptb_raw_data(train_path)
     train_data, valid_data, test_data, _ = raw_data
     with tf.Graph().as_default(), tf.Session() as session:
         initializer = tf.random_uniform_initializer(-gen_config.init_scale, gen_config.init_scale)
-        with tf.variable_scope('model', reuse=None, initializer=initializer):
-            train_input = PTBInput(config=gen_config, data=train_data)
-            m = PTBModel(False, gen_config, train_input)
+
         saver = tf.train.import_meta_graph(model_path)
         saver.restore(session, tf.train.latest_checkpoint('./'))
         print("Model restored from file" + model_path)
+        with tf.variable_scope('model', reuse=None, initializer=initializer):
+            train_input = PTBInput(config=gen_config, data=train_data)
+            m = PTBModel(False, gen_config, train_input)
         words = get_vocab(train_path)
         x = 2  # the id for <eos>
         input = np.matrix([[x]])
         text = ''
         count = 0
         state = session.run(m.initial_state)
-        print(state)
+        input_zeros = np.zeros((20,20))
         while count < num_sentences:
             output_probs, state = session.run([m.output_probs, m.final_state],
-                                              {m.input.input_data: input,
+                                              {m.input.input_data: input_zeros,
                                                   m.initial_state: state})
 
             x = sample(output_probs[0], .9)
@@ -61,8 +61,8 @@ def generate_text(train_path, model_path, num_sentences=3):
                 count += 1
             else:
                 text += " " + words[x]
-            input = np.matrix([[x]])
         return text
+
 
 
 class PTBInput(object):
@@ -93,8 +93,7 @@ class PTBModel(object):
         # different than reported in the paper.
         lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(size, forget_bias=0.0, state_is_tuple=True)
         if is_training and config.keep_prob < 1:
-            lstm_cell = tf.nn.rnn_cell.DropoutWrapper(
-                    lstm_cell, output_keep_prob=config.keep_prob)
+            lstm_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_cell, output_keep_prob=config.keep_prob)
         cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers, state_is_tuple=True)
 
         self._initial_state = cell.zero_state(batch_size, data_type())
@@ -107,12 +106,6 @@ class PTBModel(object):
         if is_training and config.keep_prob < 1:
             inputs = tf.nn.dropout(inputs, config.keep_prob)
 
-        # Simplified version of tensorflow.models.rnn.rnn.py's rnn().
-        # This builds an unrolled LSTM for tutorial purposes only.
-        # In general, use the rnn() or state_saving_rnn() from rnn.py.
-        #
-        # The alternative version of the code below is:
-        #
         inputs = tf.unstack(inputs, num=num_steps, axis=1)
         outputs, state = tf.nn.rnn(cell, inputs, initial_state=self._initial_state)
 
@@ -122,7 +115,7 @@ class PTBModel(object):
         softmax_b = tf.get_variable('softmax_b', [vocab_size], dtype=data_type())
         logits = tf.matmul(output, softmax_w) + softmax_b
 
-        self._output_probs = tf.nn.softmax(logits)
+        self._output_probs = tf.nn.softmax(logits)  # Added for generation
         loss = tf.nn.seq2seq.sequence_loss_by_example(
                 [logits],
                 [tf.reshape(input_.targets, [-1])],
@@ -135,15 +128,12 @@ class PTBModel(object):
 
         self._lr = tf.Variable(0.0, trainable=False)
         tvars = tf.trainable_variables()
-        grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
-                                                                            config.max_grad_norm)
+        grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars), config.max_grad_norm)
         optimizer = tf.train.GradientDescentOptimizer(self._lr)
-        self._train_op = optimizer.apply_gradients(
-                zip(grads, tvars),
-                global_step=tf.contrib.framework.get_or_create_global_step())
+        self._train_op = optimizer.apply_gradients(zip(grads, tvars),
+                                                   global_step=tf.contrib.framework.get_or_create_global_step())
 
-        self._new_lr = tf.placeholder(
-                tf.float32, shape=[], name='new_learning_rate')
+        self._new_lr = tf.placeholder(tf.float32, shape=[], name='new_learning_rate')
         self._lr_update = tf.assign(self._lr, self._new_lr)
 
     def assign_lr(self, session, lr_value):
@@ -216,6 +206,8 @@ def run_epoch(session, model, eval_op=None, verbose=False):
 
 
 def get_config():
+    if FLAGS.model == 'gen':
+        return SmallGenConfig()
     if FLAGS.model == 'small':
         return SmallConfig()
     elif FLAGS.model == 'medium':
