@@ -297,7 +297,7 @@ def main(_):
             if FLAGS.save_path:
                 print('Saving model to %s.' % FLAGS.save_path)
                 sv.saver.save(session, FLAGS.save_path)
-                # sv.saver.restore(session, FLAGS.save_path)
+                sv.saver.restore(session, FLAGS.save_path)
 
 if __name__ == '__main__':
     tf.app.run()
