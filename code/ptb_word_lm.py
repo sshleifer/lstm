@@ -9,6 +9,7 @@ import numpy as np
 import tensorflow as tf
 
 from code import reader
+from code.reader import get_vocab
 from code.config import *
 
 flags = tf.flags
@@ -51,19 +52,19 @@ def generate_text(train_path, model_path, num_sentences=3):
     raw_data = reader.ptb_raw_data(train_path)
     train_data, valid_data, test_data, _ = raw_data
     with tf.Graph().as_default(), tf.Session() as session:
+        train_input = PTBInput(config=gen_config, data=train_data)
         initializer = tf.random_uniform_initializer(-gen_config.init_scale, gen_config.init_scale)
         with tf.variable_scope('model', reuse=None, initializer=initializer):
-            train_input = PTBInput(config=gen_config, data=train_data)
             m = PTBModel(False, gen_config, train_input)
-
+        print(m.initial_state)
         saver = tf.train.Saver()
         saver.restore(session, model_path)
-        sv = tf.train.Supervisor(logdir=model_path)
-        with sv.managed_session() as session:
-            sv.saver.restore(session, model_path)
-        print("Model restored from file" + model_path)
-        words = reader.get_vocab(train_path)
-        state = m.initial_state.eval()
+        #sv = tf.train.Supervisor(logdir=model_path)
+        #with sv.managed_session() as session:
+        #    sv.saver.restore(session, model_path)
+        #print("Model restored from file" + model_path)
+        words = get_vocab(train_path)
+        state = m.initial_state[0].eval()
         x = 2  # the id for <eos>
         input = np.matrix([[x]])
         text = ''
