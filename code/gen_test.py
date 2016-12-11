@@ -1,4 +1,4 @@
-from ptb_word_lm import generate_text
+from code.ptb_word_lm import generate_text
 
 TRAIN_PATH = 'data/'
 #MODEL_PATH = 'log_test/'
