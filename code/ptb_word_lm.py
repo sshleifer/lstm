@@ -40,19 +40,21 @@ def generate_text(train_path, model_path, num_sentences=3):
         with tf.variable_scope('model', reuse=None, initializer=initializer):
             train_input = PTBInput(config=gen_config, data=train_data)
             m = PTBModel(False, gen_config, train_input)
-        #session.run(tf.initialize_all_variables())
         saver = tf.train.import_meta_graph(model_path)
         saver.restore(session, tf.train.latest_checkpoint('./'))
         print("Model restored from file" + model_path)
         words = get_vocab(train_path)
-        state = m.initial_state.eval()
         x = 2  # the id for <eos>
         input = np.matrix([[x]])
         text = ''
         count = 0
+        state = session.run(m.initial_state)
+        print(state)
         while count < num_sentences:
             output_probs, state = session.run([m.output_probs, m.final_state],
-                                              {m.input_data: input, m.initial_state: state})
+                                              {m.input.input_data: input,
+                                                  m.initial_state: state})
+
             x = sample(output_probs[0], .9)
             if words[x] == '<eos>':
                 text += ".\n\n"
@@ -119,6 +121,8 @@ class PTBModel(object):
                 'softmax_w', [size, vocab_size], dtype=data_type())
         softmax_b = tf.get_variable('softmax_b', [vocab_size], dtype=data_type())
         logits = tf.matmul(output, softmax_w) + softmax_b
+
+        self._output_probs = tf.nn.softmax(logits)
         loss = tf.nn.seq2seq.sequence_loss_by_example(
                 [logits],
                 [tf.reshape(input_.targets, [-1])],
@@ -141,7 +145,6 @@ class PTBModel(object):
         self._new_lr = tf.placeholder(
                 tf.float32, shape=[], name='new_learning_rate')
         self._lr_update = tf.assign(self._lr, self._new_lr)
-        self._output_probs = tf.nn.softmax(logits)
 
     def assign_lr(self, session, lr_value):
         session.run(self._lr_update, feed_dict={self._new_lr: lr_value})
