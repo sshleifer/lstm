@@ -25,6 +25,14 @@ import os
 import tensorflow as tf
 
 
+def get_vocab(filename):
+    data = _read_words(filename)
+    counter = collections.Counter(data)
+    count_pairs = sorted(counter.items(), key=lambda x: (-x[1], x[0]))
+    words, _ = list(zip(*count_pairs))
+    return words
+
+
 def _read_words(filename):
   with tf.gfile.GFile(filename, "r") as f:
     return f.read().decode("utf-8").replace("\n", "<eos>").split()

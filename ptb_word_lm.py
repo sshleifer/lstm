@@ -1,57 +1,4 @@
 # Copyright 2015 The TensorFlow Authors. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#         http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-
-"""Example / benchmark for building a PTB LSTM model.
-
-Trains the model described in:
-(Zaremba, et. al.) Recurrent Neural Network Regularization
-http://arxiv.org/abs/1409.2329
-
-There are 3 supported model configurations:
-===========================================
-|config  |epochs|train|valid  |test
-===========================================
-| small  | 13 | 37.99 |121.39 |115.91
-| medium | 39 | 48.45 | 86.16 |82.07
-| large  | 55 | 37.87 | 82.62 |78.29
-The exact results may vary depending on the random initialization.
-
-The hyperparameters used in the model:
-- init_scale - the initial scale of the weights
-- learning_rate - the initial value of the learning rate
-- max_grad_norm - the maximum permissible norm of the gradient
-- num_layers - the number of LSTM layers
-- num_steps - the number of unrolled steps of LSTM
-- hidden_size - the number of LSTM units
-- max_epoch - the number of epochs trained with the initial learning rate
-- max_max_epoch - the total number of epochs for training
-- keep_prob - the probability of keeping weights in the dropout layer
-- lr_decay - the decay of the learning rate for each epoch after "max_epoch"
-- batch_size - the batch size
-
-The data required for this example is in the data/ dir of the
-PTB dataset from Tomas Mikolov's webpage:
-
-$ wget http://www.fit.vutbr.cz/~imikolov/rnnlm/simple-examples.tgz
-$ tar xvf simple-examples.tgz
-
-To run:
-
-$ python ptb_word_lm.py --data_path=simple-examples/data/
-
-"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -66,68 +13,75 @@ from tensorflow.models.rnn.ptb import reader
 flags = tf.flags
 logging = tf.logging
 
-flags.DEFINE_string( "model", "small", "A type of model. Possible options are: small, medium, large.")
-flags.DEFINE_string("data_path", None "Where the training/test data is stored.")
-flags.DEFINE_string("save_path", None, "Model output directory.")
-flags.DEFINE_bool("use_fp16", False, "Train using 16-bit floats instead of 32bit floats")
+flags.DEFINE_string('model', 'small', 'A type of model. Possible options are: small, medium, large.')
+flags.DEFINE_string('data_path', None, 'Where the training/test data is stored.')
+flags.DEFINE_string('save_path', None, 'Model output directory.')
+flags.DEFINE_bool('use_fp16', False, 'Train using 16-bit floats instead of 32bit floats')
 
 FLAGS = flags.FLAGS
-
-
 def data_type():
     return tf.float16 if FLAGS.use_fp16 else tf.float32
 
 
-class SmallConfig(object):
-    """Small config."""
+class SmallGenConfig(object):
+    '''Small config. for generation'''
     init_scale = 0.1
     learning_rate = 1.0
     max_grad_norm = 5
     num_layers = 2
-    num_steps = 20
+    num_steps = 1 # this is the main difference
     hidden_size = 200
     max_epoch = 4
     max_max_epoch = 13
     keep_prob = 1.0
     lr_decay = 0.5
-    batch_size = 20
+    batch_size = 1
     vocab_size = 10000
 
 
-class MediumConfig(object):
-    """Medium config."""
-    init_scale = 0.05
-    learning_rate = 1.0
-    max_grad_norm = 5
-    num_layers = 2
-    num_steps = 35
-    hidden_size = 650
-    max_epoch = 6
-    max_max_epoch = 39
-    keep_prob = 0.5
-    lr_decay = 0.8
-    batch_size = 20
-    vocab_size = 10000
+def sample(a, temperature=1.):
+    a = np.log(a) / temperature
+    a = np.exp(a) / np.sum(np.exp(a))
+    return np.argmax(np.random.multinomial(1, a, 1))
 
 
-class LargeConfig(object):
-    """Large config."""
-    init_scale = 0.04
-    learning_rate = 1.0
-    max_grad_norm = 10
-    num_layers = 2
-    num_steps = 35
-    hidden_size = 1500
-    max_epoch = 14
-    max_max_epoch = 55
-    keep_prob = 0.35
-    lr_decay = 1 / 1.15
-    batch_size = 20
-    vocab_size = 10000
+def generate_text(train_path, model_path, num_sentences=3):
+    gen_config = SmallGenConfig()
+    raw_data = reader.ptb_raw_data(train_path)
+    train_data, valid_data, test_data, _ = raw_data
+    with tf.Graph().as_default(), tf.Session() as session:
+        initializer = tf.random_uniform_initializer(-gen_config.init_scale, gen_config.init_scale)
+        with tf.variable_scope('model', reuse=None, initializer=initializer):
+            train_input = PTBInput(config=gen_config, data=train_data)
+            m = PTBModel(False, gen_config, train_input)
+
+        saver = tf.train.Saver()
+        saver.restore(session, model_path)
+        sv = tf.train.Supervisor(logdir=model_path)
+        with sv.managed_session() as session:
+            sv.saver.restore(session, model_path)
+        print("Model restored from file" + model_path)
+        words = reader.get_vocab(train_path)
+        state = m.initial_state.eval()
+        x = 2  # the id for <eos>
+        input = np.matrix([[x]])
+        text = ''
+        count = 0
+        while count < num_sentences:
+            output_probs, state = session.run([m.output_probs, m.final_state],
+                                              {m.input_data: input, m.initial_state: state})
+            x = sample(output_probs[0], .9)
+            if words[x] == '<eos>':
+                text += ".\n\n"
+                count += 1
+            else:
+                text += " " + words[x]
+            input = np.matrix([[x]])
+        return text
 
 
 class TestConfig(object):
-    """Tiny config, for testing."""
+    '''Tiny config, for testing.'''
     init_scale = 0.1
     learning_rate = 1.0
     max_grad_norm = 1
@@ -143,8 +97,56 @@ class TestConfig(object):
     break_early = True
 
 
+class SmallConfig(object):
+    '''Small config.'''
+    init_scale = 0.1
+    learning_rate = 1.0
+    max_grad_norm = 5
+    num_layers = 2
+    num_steps = 20
+    hidden_size = 200
+    max_epoch = 1
+    max_max_epoch = 4
+    keep_prob = 1.0
+    lr_decay = 0.5
+    batch_size = 20
+    vocab_size = 10000
+
+
+class MediumConfig(object):
+    '''Medium config.'''
+    init_scale = 0.05
+    learning_rate = 1.0
+    max_grad_norm = 5
+    num_layers = 2
+    num_steps = 35
+    hidden_size = 650
+    max_epoch = 6
+    max_max_epoch = 39
+    keep_prob = 0.5
+    lr_decay = 0.8
+    batch_size = 20
+    vocab_size = 10000
+
+
+class LargeConfig(object):
+    '''Large config.'''
+    init_scale = 0.04
+    learning_rate = 1.0
+    max_grad_norm = 10
+    num_layers = 2
+    num_steps = 35
+    hidden_size = 1500
+    max_epoch = 14
+    max_max_epoch = 55
+    keep_prob = 0.35
+    lr_decay = 1 / 1.15
+    batch_size = 20
+    vocab_size = 10000
+
+
 class PTBInput(object):
-    """The input data."""
+    '''The input data.'''
 
     def __init__(self, config, data, name=None):
         self.batch_size = batch_size = config.batch_size
@@ -156,7 +158,7 @@ class PTBInput(object):
 
 
 class PTBModel(object):
-    """The PTB model."""
+    '''The PTB model.'''
 
     def __init__(self, is_training, config, input_):
         self._input = input_
@@ -177,9 +179,9 @@ class PTBModel(object):
 
         self._initial_state = cell.zero_state(batch_size, data_type())
 
-        with tf.device("/cpu:0"):
+        with tf.device('/cpu:0'):
             embedding = tf.get_variable(
-                    "embedding", [vocab_size, size], dtype=data_type())
+                    'embedding', [vocab_size, size], dtype=data_type())
             inputs = tf.nn.embedding_lookup(embedding, input_.input_data)
 
         if is_training and config.keep_prob < 1:
@@ -191,20 +193,13 @@ class PTBModel(object):
         #
         # The alternative version of the code below is:
         #
-        # inputs = tf.unstack(inputs, num=num_steps, axis=1)
-        # outputs, state = tf.nn.rnn(cell, inputs, initial_state=self._initial_state)
-        outputs = []
-        state = self._initial_state
-        with tf.variable_scope("RNN"):
-            for time_step in range(num_steps):
-                if time_step > 0: tf.get_variable_scope().reuse_variables()
-                (cell_output, state) = cell(inputs[:, time_step, :], state)
-                outputs.append(cell_output)
+        inputs = tf.unstack(inputs, num=num_steps, axis=1)
+        outputs, state = tf.nn.rnn(cell, inputs, initial_state=self._initial_state)
 
         output = tf.reshape(tf.concat(1, outputs), [-1, size])
         softmax_w = tf.get_variable(
-                "softmax_w", [size, vocab_size], dtype=data_type())
-        softmax_b = tf.get_variable("softmax_b", [vocab_size], dtype=data_type())
+                'softmax_w', [size, vocab_size], dtype=data_type())
+        softmax_b = tf.get_variable('softmax_b', [vocab_size], dtype=data_type())
         logits = tf.matmul(output, softmax_w) + softmax_b
         loss = tf.nn.seq2seq.sequence_loss_by_example(
                 [logits],
@@ -226,11 +221,16 @@ class PTBModel(object):
                 global_step=tf.contrib.framework.get_or_create_global_step())
 
         self._new_lr = tf.placeholder(
-                tf.float32, shape=[], name="new_learning_rate")
+                tf.float32, shape=[], name='new_learning_rate')
         self._lr_update = tf.assign(self._lr, self._new_lr)
+        self._output_probs = tf.nn.softmax(logits)
 
     def assign_lr(self, session, lr_value):
         session.run(self._lr_update, feed_dict={self._new_lr: lr_value})
+
+    @property
+    def output_probs(self):
+        return self._output_probs
 
     @property
     def input(self):
@@ -257,21 +257,19 @@ class PTBModel(object):
         return self._train_op
 
 
-
-
 def run_epoch(session, model, eval_op=None, verbose=False):
-    """Runs the model on the given data."""
+    '''Runs the model on the given data.'''
     start_time = time.time()
     costs = 0.0
     iters = 0
     state = session.run(model.initial_state)
 
     fetches = {
-            "cost": model.cost,
-            "final_state": model.final_state,
+            'cost': model.cost,
+            'final_state': model.final_state,
     }
     if eval_op is not None:
-        fetches["eval_op"] = eval_op
+        fetches['eval_op'] = eval_op
 
     for step in range(model.input.epoch_size):
         feed_dict = {}
@@ -280,37 +278,40 @@ def run_epoch(session, model, eval_op=None, verbose=False):
             feed_dict[h] = state[i].h
 
         vals = session.run(fetches, feed_dict)
-        cost = vals["cost"]
-        state = vals["final_state"]
+        cost = vals['cost']
+        state = vals['final_state']
+        #import ipdb; ipdb.set_trace()
 
         costs += cost
         iters += model.input.num_steps
 
         if verbose and step % (model.input.epoch_size // 10) == 10:
-            print("%.3f perplexity: %.3f speed: %.0f wps" %
+            print('%.3f perplexity: %.3f speed: %.0f wps' %
                         (step * 1.0 / model.input.epoch_size, np.exp(costs / iters),
                          iters * model.input.batch_size / (time.time() - start_time)))
         if model.input.break_early:
-                break
+            break
+
     return np.exp(costs / iters)
 
 
 def get_config():
-    if FLAGS.model == "small":
+    if FLAGS.model == 'small':
         return SmallConfig()
-    elif FLAGS.model == "medium":
+    elif FLAGS.model == 'medium':
         return MediumConfig()
-    elif FLAGS.model == "large":
+    elif FLAGS.model == 'large':
         return LargeConfig()
-    elif FLAGS.model == "test":
+    elif FLAGS.model == 'test':
         return TestConfig()
     else:
-        raise ValueError("Invalid model: %s", FLAGS.model)
+        raise ValueError('Invalid model: %s', FLAGS.model)
 
 
 def main(_):
     if not FLAGS.data_path:
-        raise ValueError("Must set --data_path to PTB data directory")
+        FLAGS.data_path = 'data'
+    print(FLAGS.save_path)
 
     raw_data = reader.ptb_raw_data(FLAGS.data_path)
     train_data, valid_data, test_data, _ = raw_data
@@ -323,22 +324,22 @@ def main(_):
     with tf.Graph().as_default():
         initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
 
-        with tf.name_scope("Train"):
-            train_input = PTBInput(config=config, data=train_data, name="TrainInput")
-            with tf.variable_scope("Model", reuse=None, initializer=initializer):
+        with tf.name_scope('Train'):
+            train_input = PTBInput(config=config, data=train_data, name='TrainInput')
+            with tf.variable_scope('Model', reuse=None, initializer=initializer):
                 m = PTBModel(is_training=True, config=config, input_=train_input)
-            tf.scalar_summary("Training Loss", m.cost)
-            tf.scalar_summary("Learning Rate", m.lr)
-
-        with tf.name_scope("Valid"):
-            valid_input = PTBInput(config=config, data=valid_data, name="ValidInput")
-            with tf.variable_scope("Model", reuse=True, initializer=initializer):
+                tf.scalar_summary('Learning Rate', m.lr)
+                tf.scalar_summary('Training Loss', m.cost)
+                #import ipdb; ipdb.set_trace()
+        with tf.name_scope('Valid'):
+            valid_input = PTBInput(config=config, data=valid_data, name='ValidInput')
+            with tf.variable_scope('Model', reuse=True, initializer=initializer):
                 mvalid = PTBModel(is_training=False, config=config, input_=valid_input)
-            tf.scalar_summary("Validation Loss", mvalid.cost)
+            tf.scalar_summary('Validation Loss', mvalid.cost)
 
-        with tf.name_scope("Test"):
-            test_input = PTBInput(config=eval_config, data=test_data, name="TestInput")
-            with tf.variable_scope("Model", reuse=True, initializer=initializer):
+        with tf.name_scope('Test'):
+            test_input = PTBInput(config=eval_config, data=test_data, name='TestInput')
+            with tf.variable_scope('Model', reuse=True, initializer=initializer):
                 mtest = PTBModel(is_training=False, config=eval_config,
                                  input_=test_input)
 
@@ -347,21 +348,19 @@ def main(_):
             for i in range(config.max_max_epoch):
                 lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0.0)
                 m.assign_lr(session, config.learning_rate * lr_decay)
-
-                print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
+                #import ipdb; ipdb.set_trace()
+                print('Epoch: %d Learning rate: %.3f' % (i + 1, session.run(m.lr)))
                 train_perplexity = run_epoch(session, m, eval_op=m.train_op, verbose=True)
-                print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity))
+                print('Epoch: %d Train Perplexity: %.3f' % (i + 1, train_perplexity))
                 valid_perplexity = run_epoch(session, mvalid)
-                print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, valid_perplexity))
+                print('Epoch: %d Valid Perplexity: %.3f' % (i + 1, valid_perplexity))
 
             test_perplexity = run_epoch(session, mtest)
-            print("Test Perplexity: %.3f" % test_perplexity)
-            #writer.add_summary(test_perplexity, i)
-            #writer.add_summary(train_perplexity, i)
+            print('Test Perplexity: %.3f' % test_perplexity)
             if FLAGS.save_path:
-                print("Saving model to %s." % FLAGS.save_path)
-                sv.saver.save(session, FLAGS.save_path, global_step=sv.global_step)
+                print('Saving model to %s.' % FLAGS.save_path)
+                sv.saver.save(session, FLAGS.save_path)
+                sv.saver.restore(session, FLAGS.save_path)
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     tf.app.run()
