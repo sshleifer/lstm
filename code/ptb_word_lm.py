@@ -9,6 +9,7 @@ import numpy as np
 import tensorflow as tf
 
 from code import reader
+from code.reader import get_vocab
 from code.config import *
 
 flags = tf.flags
@@ -18,26 +19,10 @@ flags.DEFINE_string('model', 'small', 'A type of model. Possible options are: sm
 flags.DEFINE_string('data_path', None, 'Where the training/test data is stored.')
 flags.DEFINE_string('save_path', None, 'Model output directory.')
 flags.DEFINE_bool('use_fp16', False, 'Train using 16-bit floats instead of 32bit floats')
-
 FLAGS = flags.FLAGS
+
 def data_type():
     return tf.float16 if FLAGS.use_fp16 else tf.float32
-
-
-class SmallGenConfig(object):
-    '''Small config. for generation'''
-    init_scale = 0.1
-    learning_rate = 1.0
-    max_grad_norm = 5
-    num_layers = 2
-    num_steps = 1 # this is the main difference
-    hidden_size = 200
-    max_epoch = 4
-    max_max_epoch = 13
-    keep_prob = 1.0
-    lr_decay = 0.5
-    batch_size = 1
-    vocab_size = 10000
 
 
 def sample(a, temperature=1.):
@@ -55,14 +40,11 @@ def generate_text(train_path, model_path, num_sentences=3):
         with tf.variable_scope('model', reuse=None, initializer=initializer):
             train_input = PTBInput(config=gen_config, data=train_data)
             m = PTBModel(False, gen_config, train_input)
-
-        saver = tf.train.Saver()
-        saver.restore(session, model_path)
-        sv = tf.train.Supervisor(logdir=model_path)
-        with sv.managed_session() as session:
-            sv.saver.restore(session, model_path)
+        #session.run(tf.initialize_all_variables())
+        saver = tf.train.import_meta_graph(model_path)
+        saver.restore(session, tf.train.latest_checkpoint('./'))
         print("Model restored from file" + model_path)
-        words = reader.get_vocab(train_path)
+        words = get_vocab(train_path)
         state = m.initial_state.eval()
         x = 2  # the id for <eos>
         input = np.matrix([[x]])
@@ -79,7 +61,6 @@ def generate_text(train_path, model_path, num_sentences=3):
                 text += " " + words[x]
             input = np.matrix([[x]])
         return text
-
 
 
 class PTBInput(object):
@@ -217,7 +198,6 @@ def run_epoch(session, model, eval_op=None, verbose=False):
         vals = session.run(fetches, feed_dict)
         cost = vals['cost']
         state = vals['final_state']
-        #import ipdb; ipdb.set_trace()
 
         costs += cost
         iters += model.input.num_steps
@@ -297,7 +277,7 @@ def main(_):
             if FLAGS.save_path:
                 print('Saving model to %s.' % FLAGS.save_path)
                 sv.saver.save(session, FLAGS.save_path)
-                # sv.saver.restore(session, FLAGS.save_path)
+                sv.saver.restore(session, FLAGS.save_path)
 
 if __name__ == '__main__':
     tf.app.run()
