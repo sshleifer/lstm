@@ -1,21 +1,18 @@
 """
 Credit: https://github.com/kensk8er/udacity/blob/master/assignment_6.py#L218
 """
-
 from __future__ import print_function
-import os
 import numpy as np
-import random
 import tensorflow as tf
 
-from code.helpers import maybe_download, read_data, CHARACTER_SIZE, BatchGenerator, ngram2id, id2char, id2_ngram
+from code.helpers import maybe_download, read_data, CHARACTER_SIZE, BatchGenerator, ngram2id, id2_ngram
 from code.bi_char_rnn import sample_distribution, log_prob, random_distribution
+
 VALID_SIZE = 1000
 
 # model parameters
 BATCH_SIZE = 64
 NUM_UNROLLINGS = 10
-NUM_NODES = 128
 NUM_STEPS = 30001
 SUMMARY_FREQUENCY = 100
 EMBEDDING_DIMENSION = 128
@@ -24,25 +21,26 @@ DROPOUT_PROBABILITY = 0.5
 VOCAB_SIZE = CHARACTER_SIZE ** 3  # [a-z] + ' ' (trigram)
 
 
-def sample(prediction):
+def sample(prediction, size=VOCAB_SIZE):
     """Turn a (column) prediction into 1-hot encoded samples."""
-    p = np.zeros(shape=[1, VOCAB_SIZE], dtype=np.float)
+    p = np.zeros(shape=[1, size], dtype=np.float)
     p[0, sample_distribution(prediction[0])] = 1.0
     return p
 
 
-def trigrams(probabilities):
-    """Turn a 1-hot encoding or a probability distribution over the possible trigrams
+def get_ngrams(probabilities):
+    """Turn a 1-hot encoding or a probability distribution over the possible ngrams
     back into its (most likely) trigram representation."""
     return [id2_ngram(bigram_id) for bigram_id in np.argmax(probabilities, 1)]
 
 
-def main(token_size=3):
+def main(token_size=3, num_unrollings=NUM_UNROLLINGS, num_nodes=128):
+    VOCAB_SIZE = CHARACTER_SIZE ** token_size
     filename = maybe_download('text8.zip', 31344016)
     text = read_data(filename)
 
     valid_text = text[:VALID_SIZE]
-    train_text = text[VALID_SIZE: VALID_SIZE]
+    train_text = text[VALID_SIZE:]
 
     train_batches = BatchGenerator(train_text, BATCH_SIZE, NUM_UNROLLINGS, token_size=token_size, vocab_size=VOCAB_SIZE)
     valid_batches = BatchGenerator(valid_text, 1, 1, token_size=3, vocab_size=VOCAB_SIZE)
@@ -51,15 +49,15 @@ def main(token_size=3):
     graph = tf.Graph()
     with graph.as_default():
         # Parameters for input, forget, cell state, and output gates
-        W_lstm = tf.Variable(tf.truncated_normal([EMBEDDING_DIMENSION + NUM_NODES, NUM_NODES * 4]))
-        b_lstm = tf.Variable(tf.zeros([1, NUM_NODES * 4]))
+        W_lstm = tf.Variable(tf.truncated_normal([EMBEDDING_DIMENSION + num_nodes, num_nodes * 4]))
+        b_lstm = tf.Variable(tf.zeros([1, num_nodes * 4]))
 
         # Variables saving state across unrollings.
-        previous_output = tf.Variable(tf.zeros([BATCH_SIZE, NUM_NODES]), trainable=False)
-        previous_state = tf.Variable(tf.zeros([BATCH_SIZE, NUM_NODES]), trainable=False)
+        previous_output = tf.Variable(tf.zeros([BATCH_SIZE, num_nodes]), trainable=False)
+        previous_state = tf.Variable(tf.zeros([BATCH_SIZE, num_nodes]), trainable=False)
 
         # Classifier weights and biases.
-        W = tf.Variable(tf.truncated_normal([NUM_NODES, VOCAB_SIZE], -0.1, 0.1))
+        W = tf.Variable(tf.truncated_normal([num_nodes, VOCAB_SIZE], -0.1, 0.1))
         b = tf.Variable(tf.zeros([VOCAB_SIZE]))
 
         # embedding
@@ -73,10 +71,10 @@ def main(token_size=3):
             X_output = tf.concat(1, [X, output])
             all_logits = tf.matmul(X_output, W_lstm) + b_lstm
 
-            input_gate = tf.sigmoid(all_logits[:, :NUM_NODES])
-            forget_gate = tf.sigmoid(all_logits[:, NUM_NODES: NUM_NODES * 2])
-            output_gate = tf.sigmoid(all_logits[:, NUM_NODES * 2: NUM_NODES * 3])
-            temp_state = all_logits[:, NUM_NODES * 3:]
+            input_gate = tf.sigmoid(all_logits[:, :num_nodes])
+            forget_gate = tf.sigmoid(all_logits[:, num_nodes: num_nodes * 2])
+            output_gate = tf.sigmoid(all_logits[:, num_nodes * 2: num_nodes * 3])
+            temp_state = all_logits[:, num_nodes * 3:]
             state = forget_gate * state + input_gate * tf.tanh(temp_state)
             return output_gate * tf.tanh(state), state
 
@@ -117,9 +115,9 @@ def main(token_size=3):
         # Sampling and validation eval: batch 1, no unrolling.
         sample_input = tf.placeholder(tf.int32, shape=[1, 1])
         sample_embed = tf.reshape(tf.nn.embedding_lookup(embeddings, sample_input), shape=[1, -1])
-        previous_sample_output = tf.Variable(tf.zeros([1, NUM_NODES]))
-        previous_sample_state = tf.Variable(tf.zeros([1, NUM_NODES]))
-        reset_sample_state = tf.group(previous_sample_output.assign(tf.zeros([1, NUM_NODES])), previous_sample_state.assign(tf.zeros([1, NUM_NODES])))
+        previous_sample_output = tf.Variable(tf.zeros([1, num_nodes]))
+        previous_sample_state = tf.Variable(tf.zeros([1, num_nodes]))
+        reset_sample_state = tf.group(previous_sample_output.assign(tf.zeros([1, num_nodes])), previous_sample_state.assign(tf.zeros([1, num_nodes])))
         sample_output, sample_state = lstm_cell(sample_embed, previous_sample_output, previous_sample_state)
 
         with tf.control_dependencies([previous_sample_output.assign(sample_output), previous_sample_state.assign(sample_state)]):
@@ -160,15 +158,15 @@ def main(token_size=3):
                     print('=' * 80)
 
                     for _ in range(5):
-                        feed = sample(random_distribution())
-                        sentence = trigrams(feed)[0]
+                        feed = sample(random_distribution(), size=VOCAB_SIZE)
+                        sentence = get_ngrams(feed)[0]
                         reset_sample_state.run()
 
                         for _ in range(79):
                             feed = np.where(feed == 1)[1].reshape((-1, 1))
                             prediction = sample_prediction.eval({sample_input: feed})
-                            feed = sample(prediction)
-                            sentence += ''.join(trigrams(feed))
+                            feed = sample(prediction, size=VOCAB_SIZE)
+                            sentence += ''.join(get_ngrams(feed))
                             last_bigram_id = ngram2id(sentence[-2:])
                             feed = np.array([[float(last_bigram_id == bigram_id) for bigram_id in range(VOCAB_SIZE)]])
 

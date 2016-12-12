@@ -1,3 +1,7 @@
 *.ckpt*
 *log*
 *ipynb*
+*.meta
+*.index
+small*
+.cache
