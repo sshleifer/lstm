@@ -12,4 +12,6 @@ Dec 10: 3pm->8pm
 Dec 11:
 12:30-1:30pm: continue trying to generate text; contemplate switching to CharRNN since it can gen out of of the box.2 -> 3pm: cannot fix text generation: switching to char rnn in udacity notebook. New plan is to 
 compare char to bigram performance.
-5pm -> 11pm:
+5pm -> 7:15: try to understand/modify bigram code to work for trigramss
+
+8pm->1am: get something working on bigrams vs. trigrams
