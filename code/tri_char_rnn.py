@@ -8,20 +8,11 @@ import tensorflow as tf
 from code.helpers import maybe_download, read_data, CHARACTER_SIZE, BatchGenerator, ngram2id, id2_ngram
 from code.bi_char_rnn import sample_distribution, log_prob, random_distribution
 
-VALID_SIZE = 1000
 
-# model parameters
-BATCH_SIZE = 64
-NUM_UNROLLINGS = 10
-NUM_STEPS = 30001
 SUMMARY_FREQUENCY = 100
-EMBEDDING_DIMENSION = 128
-DROPOUT_PROBABILITY = 0.5
-
-VOCAB_SIZE = CHARACTER_SIZE ** 3  # [a-z] + ' ' (trigram)
 
 
-def sample(prediction, size=VOCAB_SIZE):
+def sample(prediction, size):
     """Turn a (column) prediction into 1-hot encoded samples."""
     p = np.zeros(shape=[1, size], dtype=np.float)
     p[0, sample_distribution(prediction[0])] = 1.0
@@ -34,34 +25,35 @@ def get_ngrams(probabilities):
     return [id2_ngram(bigram_id) for bigram_id in np.argmax(probabilities, 1)]
 
 
-def main(token_size=3, num_unrollings=NUM_UNROLLINGS, num_nodes=128):
-    VOCAB_SIZE = CHARACTER_SIZE ** token_size
+def main(token_size=3, num_unrollings=10, num_nodes=128, num_steps=30001, embedding_dimension=128,
+         dropout_probability=0.5, batch_size=64, valid_size=1000):
+    vocab_size = CHARACTER_SIZE ** token_size
     filename = maybe_download('text8.zip', 31344016)
     text = read_data(filename)
 
-    valid_text = text[:VALID_SIZE]
-    train_text = text[VALID_SIZE:]
+    valid_text = text[:valid_size]
+    train_text = text[valid_size:]
 
-    train_batches = BatchGenerator(train_text, BATCH_SIZE, NUM_UNROLLINGS, token_size=token_size, vocab_size=VOCAB_SIZE)
-    valid_batches = BatchGenerator(valid_text, 1, 1, token_size=3, vocab_size=VOCAB_SIZE)
+    train_batches = BatchGenerator(train_text, batch_size, num_unrollings, token_size=token_size, vocab_size=vocab_size)
+    valid_batches = BatchGenerator(valid_text, 1, 1, token_size=3, vocab_size=vocab_size)
 
     # simple LSTM Model
     graph = tf.Graph()
     with graph.as_default():
         # Parameters for input, forget, cell state, and output gates
-        W_lstm = tf.Variable(tf.truncated_normal([EMBEDDING_DIMENSION + num_nodes, num_nodes * 4]))
+        W_lstm = tf.Variable(tf.truncated_normal([embedding_dimension + num_nodes, num_nodes * 4]))
         b_lstm = tf.Variable(tf.zeros([1, num_nodes * 4]))
 
         # Variables saving state across unrollings.
-        previous_output = tf.Variable(tf.zeros([BATCH_SIZE, num_nodes]), trainable=False)
-        previous_state = tf.Variable(tf.zeros([BATCH_SIZE, num_nodes]), trainable=False)
+        previous_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
+        previous_state = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
 
         # Classifier weights and biases.
-        W = tf.Variable(tf.truncated_normal([num_nodes, VOCAB_SIZE], -0.1, 0.1))
-        b = tf.Variable(tf.zeros([VOCAB_SIZE]))
+        W = tf.Variable(tf.truncated_normal([num_nodes, vocab_size], -0.1, 0.1))
+        b = tf.Variable(tf.zeros([vocab_size]))
 
         # embedding
-        embeddings = tf.Variable(tf.random_uniform([VOCAB_SIZE, EMBEDDING_DIMENSION], minval=-1.0, maxval=1.0))
+        embeddings = tf.Variable(tf.random_uniform([vocab_size, embedding_dimension], minval=-1.0, maxval=1.0))
 
         # Definition of the cell computation.
         def lstm_cell(X, output, state):
@@ -81,9 +73,9 @@ def main(token_size=3, num_unrollings=NUM_UNROLLINGS, num_nodes=128):
         # Input data.
         train_X = list()
         train_labels = list()
-        for _ in range(NUM_UNROLLINGS):
-            train_X.append(tf.placeholder(tf.int32, shape=[BATCH_SIZE, 1]))
-            train_labels.append(tf.placeholder(tf.float32, shape=[BATCH_SIZE, VOCAB_SIZE]))
+        for _ in range(num_unrollings):
+            train_X.append(tf.placeholder(tf.int32, shape=[batch_size, 1]))
+            train_labels.append(tf.placeholder(tf.float32, shape=[batch_size, vocab_size]))
 
         # Unrolled LSTM loop.
         outputs = list()
@@ -91,14 +83,14 @@ def main(token_size=3, num_unrollings=NUM_UNROLLINGS, num_nodes=128):
         state = previous_state
 
         for X in train_X:
-            embed = tf.reshape(tf.nn.embedding_lookup(embeddings, X), shape=[BATCH_SIZE, -1])
+            embed = tf.reshape(tf.nn.embedding_lookup(embeddings, X), shape=[batch_size, -1])
             output, state = lstm_cell(embed, output, state)
             outputs.append(output)
 
         # State saving across unrollings.
         with tf.control_dependencies([previous_output.assign(output), previous_state.assign(state)]):
             # Classifier.
-            logits = tf.nn.xw_plus_b(tf.nn.dropout(tf.concat(0, outputs), DROPOUT_PROBABILITY), W, b)
+            logits = tf.nn.xw_plus_b(tf.nn.dropout(tf.concat(0, outputs), dropout_probability), W, b)
             loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits, tf.concat(0, train_labels)))
 
         # Optimizer.
@@ -123,18 +115,17 @@ def main(token_size=3, num_unrollings=NUM_UNROLLINGS, num_nodes=128):
         with tf.control_dependencies([previous_sample_output.assign(sample_output), previous_sample_state.assign(sample_state)]):
             sample_prediction = tf.nn.softmax(tf.nn.xw_plus_b(sample_output, W, b))
 
-
-    # Run the model
+    #  RUN THE MODEL
     with tf.Session(graph=graph) as session:
         tf.initialize_all_variables().run()
         print('Initialized')
         mean_loss = 0
 
-        for step in range(NUM_STEPS):
+        for step in range(num_steps):
             batches = train_batches.next()
             feed_dict = dict()
 
-            for batch_id in range(NUM_UNROLLINGS):
+            for batch_id in range(num_unrollings):
                 feed_dict[train_X[batch_id]] = np.where(batches[batch_id] == 1)[1].reshape((-1, 1))
                 feed_dict[train_labels[batch_id]] = batches[batch_id + 1]
 
@@ -158,17 +149,17 @@ def main(token_size=3, num_unrollings=NUM_UNROLLINGS, num_nodes=128):
                     print('=' * 80)
 
                     for _ in range(5):
-                        feed = sample(random_distribution(), size=VOCAB_SIZE)
+                        feed = sample(random_distribution(), size=vocab_size)
                         sentence = get_ngrams(feed)[0]
                         reset_sample_state.run()
 
                         for _ in range(79):
                             feed = np.where(feed == 1)[1].reshape((-1, 1))
                             prediction = sample_prediction.eval({sample_input: feed})
-                            feed = sample(prediction, size=VOCAB_SIZE)
+                            feed = sample(prediction, size=vocab_size)
                             sentence += ''.join(get_ngrams(feed))
                             last_bigram_id = ngram2id(sentence[-2:])
-                            feed = np.array([[float(last_bigram_id == bigram_id) for bigram_id in range(VOCAB_SIZE)]])
+                            feed = np.array([[float(last_bigram_id == bigram_id) for bigram_id in range(vocab_size)]])
 
                         print(sentence)
 
@@ -178,12 +169,12 @@ def main(token_size=3, num_unrollings=NUM_UNROLLINGS, num_nodes=128):
                 reset_sample_state.run()
                 valid_log_prob = 0
 
-                for _ in range(VALID_SIZE):
+                for _ in range(valid_size):
                     valid_batch = valid_batches.next()
                     predictions = sample_prediction.eval({sample_input: np.where(valid_batch[0] == 1)[1].reshape((-1, 1))})
                     valid_log_prob = valid_log_prob + log_prob(predictions, valid_batch[1])
 
-                print('Validation set perplexity: %.2f' % float(np.exp(valid_log_prob / VALID_SIZE)))
+                print('Validation set perplexity: %.2f' % float(np.exp(valid_log_prob / valid_size)))
 
 
 if __name__ == '__main__':
