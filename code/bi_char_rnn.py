@@ -197,7 +197,6 @@ if __name__ == '__main__':
 
     train_batches = BatchGenerator(train_text, BATCH_SIZE, NUM_UNROLLINGS)
     valid_batches = BatchGenerator(valid_text, 1, 1)
-    import ipdb; ipdb.set_trace()
 
     # simple LSTM Model
     graph = tf.Graph()
