@@ -3,13 +3,12 @@ Credit: https://github.com/kensk8er/udacity/blob/master/assignment_6.py#L218
 """
 
 from __future__ import print_function
-import os
 import numpy as np
 import random
 import string
 
+from code.helpers import BatchGenerator, maybe_download, read_data, id2char
 import tensorflow as tf
-
 
 
 VALID_SIZE = 1000
@@ -51,13 +50,6 @@ def bigram2id(bigram):
     return char_id
 
 
-def id2char(char_id):
-    if char_id > 0:
-        return chr(char_id + FIRST_LETTER - 1)
-    else:
-        return ' '
-
-
 def id2bigram(char_id):
     first_digit_id = char_id % CHARACTER_SIZE
     second_digit_id = char_id // CHARACTER_SIZE
@@ -65,7 +57,7 @@ def id2bigram(char_id):
     return id2char(first_digit_id) + id2char(second_digit_id)
 
 
-class BatchGenerator(object):
+class DeprecatedBatchGenerator(object):
     def __init__(self, text, batch_size, num_unrollings):
         self._text = text
         self._text_size = len(text)
@@ -142,11 +134,6 @@ def sample_distribution(distribution):
     return len(distribution) - 1
 
 
-def sample(prediction):
-    """Turn a (column) prediction into 1-hot encoded samples."""
-    p = np.zeros(shape=[1, VOCABULARY_SIZE], dtype=np.float)
-    p[0, sample_distribution(prediction[0])] = 1.0
-    return p
 
 
 def random_distribution():

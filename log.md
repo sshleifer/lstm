@@ -14,4 +14,5 @@ Dec 11:
 compare char to bigram performance.
 5pm -> 7:15: try to understand/modify bigram code to work for trigramss
 
-8pm->1am: get something working on bigrams vs. trigrams
+8pm->10:14: get trigrams encoded
+10:40->1am: get something working on bigrams vs. trigrams

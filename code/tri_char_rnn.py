@@ -6,16 +6,10 @@ from __future__ import print_function
 import os
 import numpy as np
 import random
-import string
-
 import tensorflow as tf
 
-from code.bi_char_rnn import maybe_download, read_data, CHARACTER_SIZE, FIRST_LETTER
-
-PROJECT_ROOT = '/Users/shleifer/lstmux'
-DATASET_FILE = os.path.join(PROJECT_ROOT, 'text8.pkl')
-URL = 'http://mattmahoney.net/dc/'
-
+from code.helpers import maybe_download, read_data, CHARACTER_SIZE, BatchGenerator, ngram2id, id2char, id2_ngram
+from code.bi_char_rnn import sample_distribution, log_prob, random_distribution
 VALID_SIZE = 1000
 
 # model parameters
@@ -27,104 +21,31 @@ SUMMARY_FREQUENCY = 100
 EMBEDDING_DIMENSION = 128
 DROPOUT_PROBABILITY = 0.5
 
-VOCABULARY_SIZE = CHARACTER_SIZE ** 2  # [a-z] + ' ' (trigram)
-J = {}
-
-
-
-
-def id2char(char_id):
-    if char_id > 0:
-        return chr(char_id + FIRST_LETTER - 1)
-    else:
-        return ' '
-
-
-def id2_trigram(char_id):
-    first_digit_id = char_id % CHARACTER_SIZE
-    second_digit_id = char_id // CHARACTER_SIZE
-    third_digit = char_id // (CHARACTER_SIZE**2)
-    return id2char(first_digit_id) + id2char(second_digit_id) + id2char(third_digit)
-
-
-def id2ngram(char_id):
-    first_digit_id = char_id % CHARACTER_SIZE
-    second_digit_id = char_id // CHARACTER_SIZE
-    return id2char(first_digit_id) + id2char(second_digit_id)
-
-
-
-
-def characters(probabilities):
-    """Turn a 1-hot encoding or a probability distribution over the possible
-    characters back into its (most likely) character representation."""
-    return [id2char(char_id) for char_id in np.argmax(probabilities, 1)]
-
-
-def bigrams(probabilities):
-    """Turn a 1-hot encoding or a probability distribution over the possible
-    bigrams back into its (most likely) bigram representation."""
-    return [id2ngram(bigram_id) for bigram_id in np.argmax(probabilities, 1)]
-
-
-def batches2string(batches):
-    """Convert a sequence of batches back into their (most likely) string
-    representation."""
-    string = [''] * batches[0].shape[0]
-
-    for batch in batches:
-        string = [''.join(string_tuple) for string_tuple in zip(string, characters(batch))]
-
-    return string
-
-
-def log_prob(predictions, labels):
-    """Log-probability of the true labels in a predicted batch."""
-    predictions[predictions < 1e-10] = 1e-10
-    return np.sum(np.multiply(labels, -np.log(predictions))) / labels.shape[0]
-
-
-def sample_distribution(distribution):
-    """Sample one element from a distribution assumed to be an array of normalized probabilities."""
-    r = random.uniform(0, 1)
-    s = 0
-
-    for i in range(len(distribution)):
-        s += distribution[i]
-
-        if s >= r:
-            return i
-
-    return len(distribution) - 1
+VOCAB_SIZE = CHARACTER_SIZE ** 3  # [a-z] + ' ' (trigram)
 
 
 def sample(prediction):
     """Turn a (column) prediction into 1-hot encoded samples."""
-    p = np.zeros(shape=[1, VOCABULARY_SIZE], dtype=np.float)
+    p = np.zeros(shape=[1, VOCAB_SIZE], dtype=np.float)
     p[0, sample_distribution(prediction[0])] = 1.0
     return p
 
 
-def random_distribution():
-    """Generate a random column of probabilities."""
-    b = np.random.uniform(0.0, 1.0, size=[1, VOCABULARY_SIZE])
-    return b / np.sum(b, 1)[:, None]
+def trigrams(probabilities):
+    """Turn a 1-hot encoding or a probability distribution over the possible trigrams
+    back into its (most likely) trigram representation."""
+    return [id2_ngram(bigram_id) for bigram_id in np.argmax(probabilities, 1)]
 
 
-def bigram_label2unigram_label(bigram_one_hot_encodings, batch_size=BATCH_SIZE):
-    unigram_id_labels = np.where(bigram_one_hot_encodings == 1)[1] // CHARACTER_SIZE
-    return np.array([[float(char_id == unigram_id_labels[batch_id]) for char_id in range(CHARACTER_SIZE)] for batch_id in range(batch_size)])
-
-
-def main(token_size=2):
+def main(token_size=3):
     filename = maybe_download('text8.zip', 31344016)
     text = read_data(filename)
 
     valid_text = text[:VALID_SIZE]
-    train_text = text[VALID_SIZE:]
+    train_text = text[VALID_SIZE: VALID_SIZE]
 
-    train_batches = BatchGenerator(train_text, BATCH_SIZE, NUM_UNROLLINGS, token_size=token_size)
-    valid_batches = BatchGenerator(valid_text, 1, 1, token_size=3)
+    train_batches = BatchGenerator(train_text, BATCH_SIZE, NUM_UNROLLINGS, token_size=token_size, vocab_size=VOCAB_SIZE)
+    valid_batches = BatchGenerator(valid_text, 1, 1, token_size=3, vocab_size=VOCAB_SIZE)
 
     # simple LSTM Model
     graph = tf.Graph()
@@ -138,11 +59,11 @@ def main(token_size=2):
         previous_state = tf.Variable(tf.zeros([BATCH_SIZE, NUM_NODES]), trainable=False)
 
         # Classifier weights and biases.
-        W = tf.Variable(tf.truncated_normal([NUM_NODES, VOCABULARY_SIZE], -0.1, 0.1))
-        b = tf.Variable(tf.zeros([VOCABULARY_SIZE]))
+        W = tf.Variable(tf.truncated_normal([NUM_NODES, VOCAB_SIZE], -0.1, 0.1))
+        b = tf.Variable(tf.zeros([VOCAB_SIZE]))
 
         # embedding
-        embeddings = tf.Variable(tf.random_uniform([VOCABULARY_SIZE, EMBEDDING_DIMENSION], minval=-1.0, maxval=1.0))
+        embeddings = tf.Variable(tf.random_uniform([VOCAB_SIZE, EMBEDDING_DIMENSION], minval=-1.0, maxval=1.0))
 
         # Definition of the cell computation.
         def lstm_cell(X, output, state):
@@ -159,13 +80,12 @@ def main(token_size=2):
             state = forget_gate * state + input_gate * tf.tanh(temp_state)
             return output_gate * tf.tanh(state), state
 
-
         # Input data.
         train_X = list()
         train_labels = list()
         for _ in range(NUM_UNROLLINGS):
             train_X.append(tf.placeholder(tf.int32, shape=[BATCH_SIZE, 1]))
-            train_labels.append(tf.placeholder(tf.float32, shape=[BATCH_SIZE, VOCABULARY_SIZE]))
+            train_labels.append(tf.placeholder(tf.float32, shape=[BATCH_SIZE, VOCAB_SIZE]))
 
         # Unrolled LSTM loop.
         outputs = list()
@@ -241,16 +161,16 @@ def main(token_size=2):
 
                     for _ in range(5):
                         feed = sample(random_distribution())
-                        sentence = bigrams(feed)[0]
+                        sentence = trigrams(feed)[0]
                         reset_sample_state.run()
 
                         for _ in range(79):
                             feed = np.where(feed == 1)[1].reshape((-1, 1))
                             prediction = sample_prediction.eval({sample_input: feed})
                             feed = sample(prediction)
-                            sentence += ''.join(bigrams(feed))
+                            sentence += ''.join(trigrams(feed))
                             last_bigram_id = ngram2id(sentence[-2:])
-                            feed = np.array([[float(last_bigram_id == bigram_id) for bigram_id in range(VOCABULARY_SIZE)]])
+                            feed = np.array([[float(last_bigram_id == bigram_id) for bigram_id in range(VOCAB_SIZE)]])
 
                         print(sentence)
 
