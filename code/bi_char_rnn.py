@@ -1,15 +1,23 @@
+# -*- coding: UTF-8 -*-
 """
-Credit: https://github.com/kensk8er/udacity/blob/master/assignment_6.py#L218
+Script for assignment 6.
 """
 
 from __future__ import print_function
+import os
+from urllib import urlretrieve
 import numpy as np
 import random
 import string
 
-from code.helpers import BatchGenerator, maybe_download, read_data, id2char
 import tensorflow as tf
+import zipfile
 
+__author__ = 'kensk8er'
+
+PROJECT_ROOT = '/Users/kensk8er/PycharmProjects/udacity'
+DATASET_FILE = os.path.join(PROJECT_ROOT, 'text8.pkl')
+URL = 'http://mattmahoney.net/dc/'
 
 VALID_SIZE = 1000
 
@@ -27,6 +35,26 @@ VOCABULARY_SIZE = CHARACTER_SIZE ** 2  # [a-z] + ' ' (bigram)
 FIRST_LETTER = ord(string.ascii_lowercase[0])
 
 
+def maybe_download(filename, expected_bytes):
+    """Download a file if not present, and make sure it's the right size."""
+    if not os.path.exists(filename):
+        filename, _ = urlretrieve(URL + filename, filename)
+
+    stat_info = os.stat(filename)
+
+    if stat_info.st_size == expected_bytes:
+        print('Found and verified %s' % filename)
+    else:
+        print(stat_info.st_size)
+        raise Exception('Failed to verify ' + filename + '. Can you get to it with a browser?')
+
+    return filename
+
+
+def read_data(filename):
+    with zipfile.ZipFile(filename) as zip_file:
+        for name in zip_file.namelist():
+            return tf.compat.as_str(zip_file.read(name))
 
 
 def char2id(char):
@@ -50,6 +78,13 @@ def bigram2id(bigram):
     return char_id
 
 
+def id2char(char_id):
+    if char_id > 0:
+        return chr(char_id + FIRST_LETTER - 1)
+    else:
+        return ' '
+
+
 def id2bigram(char_id):
     first_digit_id = char_id % CHARACTER_SIZE
     second_digit_id = char_id // CHARACTER_SIZE
@@ -57,7 +92,7 @@ def id2bigram(char_id):
     return id2char(first_digit_id) + id2char(second_digit_id)
 
 
-class DeprecatedBatchGenerator(object):
+class BatchGenerator(object):
     def __init__(self, text, batch_size, num_unrollings):
         self._text = text
         self._text_size = len(text)
@@ -134,6 +169,11 @@ def sample_distribution(distribution):
     return len(distribution) - 1
 
 
+def sample(prediction):
+    """Turn a (column) prediction into 1-hot encoded samples."""
+    p = np.zeros(shape=[1, VOCABULARY_SIZE], dtype=np.float)
+    p[0, sample_distribution(prediction[0])] = 1.0
+    return p
 
 
 def random_distribution():
@@ -153,6 +193,7 @@ if __name__ == '__main__':
 
     valid_text = text[:VALID_SIZE]
     train_text = text[VALID_SIZE:]
+    train_size = len(train_text)
 
     train_batches = BatchGenerator(train_text, BATCH_SIZE, NUM_UNROLLINGS)
     valid_batches = BatchGenerator(valid_text, 1, 1)

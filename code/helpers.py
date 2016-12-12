@@ -2,6 +2,7 @@ import string
 import os
 from urllib import urlretrieve
 import numpy as np
+import random
 import tensorflow as tf
 import zipfile
 
@@ -34,6 +35,7 @@ def read_data(filename):
     with zipfile.ZipFile(filename) as zip_file:
         for name in zip_file.namelist():
             return tf.compat.as_str(zip_file.read(name))
+
 
 def char2id(char):
     if char in string.ascii_lowercase:
@@ -68,6 +70,30 @@ def id2_ngram(char_id, n_chars=3):
         seqs.append(id2char(part))
     return ''.join(reversed(seqs))
 
+
+def random_distribution(size):
+    """Generate a random column of probabilities."""
+    b = np.random.uniform(0.0, 1.0, size=[1, size])
+    return b / np.sum(b, 1)[:, None]
+
+
+def log_prob(predictions, labels):
+    """Log-probability of the true labels in a predicted batch."""
+    predictions[predictions < 1e-10] = 1e-10
+    return np.sum(np.multiply(labels, -np.log(predictions))) / labels.shape[0]
+
+def sample_distribution(distribution):
+    """Sample one element from a distribution assumed to be an array of normalized probabilities."""
+    r = random.uniform(0, 1)
+    s = 0
+
+    for i in range(len(distribution)):
+        s += distribution[i]
+
+        if s >= r:
+            return i
+
+    return len(distribution) - 1
 
 class BatchGenerator(object):
     def __init__(self, text, batch_size, num_unrollings, token_size=2, vocab_size=VOCABULARY_SIZE):

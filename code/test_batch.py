@@ -4,6 +4,7 @@ from code.helpers import BatchGenerator, read_data, CHARACTER_SIZE
 from code.helpers import ngram2id
 from code.tri_char_rnn import main, id2_ngram
 
+
 class GenTests(unittest.TestCase):
 
     text = read_data('text8.zip')
@@ -23,7 +24,7 @@ class GenTests(unittest.TestCase):
         bg.next()
 
     def test_encode(self):
-        seqs = [' ab', 'def', 'fed']
+        seqs = [' ab', 'def', 'fed', 'ab', 'a', ' ']
         for seq in seqs:
             char_id = ngram2id(seq)
-            self.assertEqual(id2_ngram(char_id), seq)
+            self.assertEqual(id2_ngram(char_id, len(seq)), seq)

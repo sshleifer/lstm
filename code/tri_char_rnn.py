@@ -5,9 +5,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
-from code.helpers import maybe_download, read_data, CHARACTER_SIZE, BatchGenerator, ngram2id, id2_ngram
-from code.bi_char_rnn import sample_distribution, log_prob, random_distribution
-
+from code.helpers import maybe_download, read_data, CHARACTER_SIZE, BatchGenerator, ngram2id, id2_ngram, sample_distribution, random_distribution, log_prob
 
 SUMMARY_FREQUENCY = 100
 
@@ -19,23 +17,24 @@ def sample(prediction, size):
     return p
 
 
-def get_ngrams(probabilities):
-    """Turn a 1-hot encoding or a probability distribution over the possible ngrams
-    back into its (most likely) trigram representation."""
-    return [id2_ngram(bigram_id) for bigram_id in np.argmax(probabilities, 1)]
+def get_ngrams(probabilities, token_size):
+    """Turn a 1-hot encoding or a probability distribution over the possible ngrams back into its (most likely) trigram representation."""
+    return [id2_ngram(bigram_id, n_chars=token_size) for bigram_id in np.argmax(probabilities, 1)]
 
 
-def main(token_size=3, num_unrollings=10, num_nodes=128, num_steps=30001, embedding_dimension=128,
+def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedding_dimension=128,
          dropout_probability=0.5, batch_size=64, valid_size=1000):
+
     vocab_size = CHARACTER_SIZE ** token_size
     filename = maybe_download('text8.zip', 31344016)
     text = read_data(filename)
 
+    embedding_dimension = min(vocab_size, embedding_dimension)
     valid_text = text[:valid_size]
     train_text = text[valid_size:]
 
     train_batches = BatchGenerator(train_text, batch_size, num_unrollings, token_size=token_size, vocab_size=vocab_size)
-    valid_batches = BatchGenerator(valid_text, 1, 1, token_size=3, vocab_size=vocab_size)
+    valid_batches = BatchGenerator(valid_text, 1, 1, token_size=token_size, vocab_size=vocab_size)
 
     # simple LSTM Model
     graph = tf.Graph()
@@ -109,7 +108,8 @@ def main(token_size=3, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
         sample_embed = tf.reshape(tf.nn.embedding_lookup(embeddings, sample_input), shape=[1, -1])
         previous_sample_output = tf.Variable(tf.zeros([1, num_nodes]))
         previous_sample_state = tf.Variable(tf.zeros([1, num_nodes]))
-        reset_sample_state = tf.group(previous_sample_output.assign(tf.zeros([1, num_nodes])), previous_sample_state.assign(tf.zeros([1, num_nodes])))
+        reset_sample_state = tf.group(previous_sample_output.assign(tf.zeros([1, num_nodes])),
+                                      previous_sample_state.assign(tf.zeros([1, num_nodes])))
         sample_output, sample_state = lstm_cell(sample_embed, previous_sample_output, previous_sample_state)
 
         with tf.control_dependencies([previous_sample_output.assign(sample_output), previous_sample_state.assign(sample_state)]):
@@ -147,17 +147,16 @@ def main(token_size=3, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
                 if step % (SUMMARY_FREQUENCY * 10) == 0:
                     # Generate some samples.
                     print('=' * 80)
-
                     for _ in range(5):
-                        feed = sample(random_distribution(), size=vocab_size)
-                        sentence = get_ngrams(feed)[0]
+                        old_feed = sample(random_distribution(vocab_size), size=vocab_size)
+                        sentence = get_ngrams(old_feed, token_size)[0]
                         reset_sample_state.run()
-
                         for _ in range(79):
-                            feed = np.where(feed == 1)[1].reshape((-1, 1))
+                            feed = np.where(old_feed == 1)[1].reshape((-1, 1))
+                            assert feed.shape == (1, 1), old_feed
                             prediction = sample_prediction.eval({sample_input: feed})
                             feed = sample(prediction, size=vocab_size)
-                            sentence += ''.join(get_ngrams(feed))
+                            sentence += ''.join(get_ngrams(feed, token_size))
                             last_bigram_id = ngram2id(sentence[-2:])
                             feed = np.array([[float(last_bigram_id == bigram_id) for bigram_id in range(vocab_size)]])
 
@@ -172,7 +171,6 @@ def main(token_size=3, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
                 for _ in range(valid_size):
                     valid_batch = valid_batches.next()
                     predictions = sample_prediction.eval({sample_input: np.where(valid_batch[0] == 1)[1].reshape((-1, 1))})
-                    valid_log_prob = valid_log_prob + log_prob(predictions, valid_batch[1])
 
                 print('Validation set perplexity: %.2f' % float(np.exp(valid_log_prob / valid_size)))
 
