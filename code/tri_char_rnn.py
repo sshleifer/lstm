@@ -30,8 +30,8 @@ def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
     text = read_data(filename)
 
     embedding_dimension = min(vocab_size, embedding_dimension)
-    valid_text = text[:valid_size]
     train_text = text[valid_size:]
+    valid_text = text[:valid_size]
 
     train_batches = BatchGenerator(train_text, batch_size, num_unrollings, token_size=token_size, vocab_size=vocab_size)
     valid_batches = BatchGenerator(valid_text, 1, 1, token_size=token_size, vocab_size=vocab_size)
@@ -171,7 +171,7 @@ def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
                 for _ in range(valid_size):
                     valid_batch = valid_batches.next()
                     predictions = sample_prediction.eval({sample_input: np.where(valid_batch[0] == 1)[1].reshape((-1, 1))})
-
+                    valid_log_prob = valid_log_prob + log_prob(predictions, valid_batch[1])
                 print('Validation set perplexity: %.2f' % float(np.exp(valid_log_prob / valid_size)))
 
 
