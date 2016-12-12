@@ -31,7 +31,7 @@ EMBEDDING_DIMENSION = 128
 DROPOUT_PROBABILITY = 0.5
 
 CHARACTER_SIZE = (len(string.ascii_lowercase) + 1)  # [a-z] + ' '
-VOCABULARY_SIZE = CHARACTER_SIZE ** 2  # [a-z] + ' ' (bigram)
+vocab_size = CHARACTER_SIZE ** 2  # [a-z] + ' ' (bigram)
 FIRST_LETTER = ord(string.ascii_lowercase[0])
 
 
@@ -104,7 +104,7 @@ class BatchGenerator(object):
 
     def _next_batch(self):
         """Generate a single batch from the current cursor position in the data."""
-        batch = np.zeros(shape=(self._batch_size, VOCABULARY_SIZE), dtype=np.float)
+        batch = np.zeros(shape=(self._batch_size, vocab_size), dtype=np.float)
 
         for batch_id in range(self._batch_size):
             batch[batch_id, bigram2id(self._text[self._cursor[batch_id]: self._cursor[batch_id] + 2])] = 1.0
@@ -171,14 +171,14 @@ def sample_distribution(distribution):
 
 def sample(prediction):
     """Turn a (column) prediction into 1-hot encoded samples."""
-    p = np.zeros(shape=[1, VOCABULARY_SIZE], dtype=np.float)
+    p = np.zeros(shape=[1, vocab_size], dtype=np.float)
     p[0, sample_distribution(prediction[0])] = 1.0
     return p
 
 
 def random_distribution():
     """Generate a random column of probabilities."""
-    b = np.random.uniform(0.0, 1.0, size=[1, VOCABULARY_SIZE])
+    b = np.random.uniform(0.0, 1.0, size=[1, vocab_size])
     return b / np.sum(b, 1)[:, None]
 
 
@@ -197,6 +197,7 @@ if __name__ == '__main__':
 
     train_batches = BatchGenerator(train_text, BATCH_SIZE, NUM_UNROLLINGS)
     valid_batches = BatchGenerator(valid_text, 1, 1)
+    import ipdb; ipdb.set_trace()
 
     # simple LSTM Model
     graph = tf.Graph()
@@ -210,11 +211,11 @@ if __name__ == '__main__':
         previous_state = tf.Variable(tf.zeros([BATCH_SIZE, NUM_NODES]), trainable=False)
 
         # Classifier weights and biases.
-        W = tf.Variable(tf.truncated_normal([NUM_NODES, VOCABULARY_SIZE], -0.1, 0.1))
-        b = tf.Variable(tf.zeros([VOCABULARY_SIZE]))
+        W = tf.Variable(tf.truncated_normal([NUM_NODES, vocab_size], -0.1, 0.1))
+        b = tf.Variable(tf.zeros([vocab_size]))
 
         # embedding
-        embeddings = tf.Variable(tf.random_uniform([VOCABULARY_SIZE, EMBEDDING_DIMENSION], minval=-1.0, maxval=1.0))
+        embeddings = tf.Variable(tf.random_uniform([vocab_size, EMBEDDING_DIMENSION], minval=-1.0, maxval=1.0))
 
         # Definition of the cell computation.
         def lstm_cell(X, output, state):
@@ -238,7 +239,7 @@ if __name__ == '__main__':
         train_labels = list()
         for _ in range(NUM_UNROLLINGS):
             train_X.append(tf.placeholder(tf.int32, shape=[BATCH_SIZE, 1]))
-            train_labels.append(tf.placeholder(tf.float32, shape=[BATCH_SIZE, VOCABULARY_SIZE]))
+            train_labels.append(tf.placeholder(tf.float32, shape=[BATCH_SIZE, vocab_size]))
 
         # Unrolled LSTM loop.
         outputs = list()
@@ -323,7 +324,7 @@ if __name__ == '__main__':
                             feed = sample(prediction)
                             sentence += ''.join(bigrams(feed))
                             last_bigram_id = bigram2id(sentence[-2:])
-                            feed = np.array([[float(last_bigram_id == bigram_id) for bigram_id in range(VOCABULARY_SIZE)]])
+                            feed = np.array([[float(last_bigram_id == bigram_id) for bigram_id in range(vocab_size)]])
 
                         print(sentence)
 

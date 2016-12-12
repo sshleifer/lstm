@@ -35,7 +35,6 @@ def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
 
     train_batches = BatchGenerator(train_text, batch_size, num_unrollings, token_size=token_size, vocab_size=vocab_size)
     valid_batches = BatchGenerator(valid_text, 1, 1, token_size=token_size, vocab_size=vocab_size)
-
     # simple LSTM Model
     graph = tf.Graph()
     with graph.as_default():
@@ -148,12 +147,12 @@ def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
                     # Generate some samples.
                     print('=' * 80)
                     for _ in range(5):
-                        old_feed = sample(random_distribution(vocab_size), size=vocab_size)
-                        sentence = get_ngrams(old_feed, token_size)[0]
+                        feed = sample(random_distribution(vocab_size), size=vocab_size)
+                        sentence = get_ngrams(feed, token_size)[0]
                         reset_sample_state.run()
                         for _ in range(79):
-                            feed = np.where(old_feed == 1)[1].reshape((-1, 1))
-                            assert feed.shape == (1, 1), old_feed
+                            feed = np.where(feed == 1)[1].reshape((-1, 1))
+                            #assert feed.shape == (token_size, 1), feed
                             prediction = sample_prediction.eval({sample_input: feed})
                             feed = sample(prediction, size=vocab_size)
                             sentence += ''.join(get_ngrams(feed, token_size))
