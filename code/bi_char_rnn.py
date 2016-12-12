@@ -4,18 +4,13 @@ Credit: https://github.com/kensk8er/udacity/blob/master/assignment_6.py#L218
 
 from __future__ import print_function
 import os
-from urllib import urlretrieve
 import numpy as np
 import random
 import string
 
 import tensorflow as tf
-import zipfile
 
 
-PROJECT_ROOT = '/Users/shleifer/lstmux'
-DATASET_FILE = os.path.join(PROJECT_ROOT, 'text8.pkl')
-URL = 'http://mattmahoney.net/dc/'
 
 VALID_SIZE = 1000
 
@@ -33,26 +28,6 @@ VOCABULARY_SIZE = CHARACTER_SIZE ** 2  # [a-z] + ' ' (bigram)
 FIRST_LETTER = ord(string.ascii_lowercase[0])
 
 
-def maybe_download(filename, expected_bytes):
-    """Download a file if not present, and make sure it's the right size."""
-    if not os.path.exists(filename):
-        filename, _ = urlretrieve(URL + filename, filename)
-
-    stat_info = os.stat(filename)
-
-    if stat_info.st_size == expected_bytes:
-        print('Found and verified %s' % filename)
-    else:
-        print(stat_info.st_size)
-        raise Exception('Failed to verify ' + filename + '. Can you get to it with a browser?')
-
-    return filename
-
-
-def read_data(filename):
-    with zipfile.ZipFile(filename) as zip_file:
-        for name in zip_file.namelist():
-            return tf.compat.as_str(zip_file.read(name))
 
 
 def char2id(char):
@@ -191,7 +166,6 @@ if __name__ == '__main__':
 
     valid_text = text[:VALID_SIZE]
     train_text = text[VALID_SIZE:]
-    train_size = len(train_text)
 
     train_batches = BatchGenerator(train_text, BATCH_SIZE, NUM_UNROLLINGS)
     valid_batches = BatchGenerator(valid_text, 1, 1)

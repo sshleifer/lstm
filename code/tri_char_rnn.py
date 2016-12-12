@@ -31,23 +31,6 @@ VOCABULARY_SIZE = CHARACTER_SIZE ** 2  # [a-z] + ' ' (trigram)
 J = {}
 
 
-def char2id(char):
-    if char in string.ascii_lowercase:
-        return ord(char) - FIRST_LETTER + 1
-    elif char == ' ':
-        return 0
-    else:
-        print('Unexpected character: %s' % char)
-        return 0
-
-
-def ngram2id(bigram):
-    """easily extensible to ngram2id actually"""
-    char_id = 0
-    for digit, char in enumerate(bigram):
-        char_id += char2id(char) * (CHARACTER_SIZE ** digit)
-    J[char_id] = bigram
-    return char_id
 
 
 def id2char(char_id):
@@ -70,39 +53,6 @@ def id2ngram(char_id):
     return id2char(first_digit_id) + id2char(second_digit_id)
 
 
-class BatchGenerator(object):
-    def __init__(self, text, batch_size, num_unrollings, token_size=2):
-        self._text = text
-        self._text_size = len(text)
-        self._batch_size = batch_size
-        self._num_unrollings = num_unrollings
-        segment = self._text_size // batch_size
-        self._cursor = [offset * segment for offset in range(batch_size)]
-        self.token_size = token_size
-        self._last_batch = self._next_batch()
-
-    def _next_batch(self):
-        """Generate a single batch from the current cursor position in the data."""
-        batch = np.zeros(shape=(self._batch_size, VOCABULARY_SIZE), dtype=np.float)
-
-        for batch_id in range(self._batch_size):
-            batch[batch_id, ngram2id(self._text[self._cursor[batch_id]: self._cursor[batch_id] + self.token_size])] = 1.0
-            self._cursor[batch_id] = (self._cursor[batch_id] + 2) % (self._text_size - 1)
-
-        return batch
-
-    def next(self):
-        """Generate the next array of batches from the data. The array consists of
-        the last batch of the previous array, followed by num_unrollings new ones.
-        """
-        batches = [self._last_batch]
-
-        for step in range(self._num_unrollings):
-            batches.append(self._next_batch())
-
-        self._last_batch = batches[-1]
-
-        return batches
 
 
 def characters(probabilities):
@@ -172,10 +122,9 @@ def main(token_size=2):
 
     valid_text = text[:VALID_SIZE]
     train_text = text[VALID_SIZE:]
-    train_size = len(train_text)
 
     train_batches = BatchGenerator(train_text, BATCH_SIZE, NUM_UNROLLINGS, token_size=token_size)
-    valid_batches = BatchGenerator(valid_text, 1, 1)
+    valid_batches = BatchGenerator(valid_text, 1, 1, token_size=3)
 
     # simple LSTM Model
     graph = tf.Graph()
