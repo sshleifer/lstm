@@ -1,5 +1,11 @@
 #!/bin/bash
 
-python ptb_word_lm.py --data_path=/Users/shleifer/lstm-char-cnn/data/ptb/ --model small > log_small.txt
-python ptb_word_lm.py --data_path=/Users/shleifer/lstm-char-cnn/data/ptb/ --model medium > log_medium.txt
-python ptb_word_lm.py --data_path=/Users/shleifer/lstm-char-cnn/data/ptb/ --model large > log_large.txt
+
+python code/tri_char_rnn.py --token_size=3 --num_unrollings=10 --num_steps=10000 > f_3_10.txt
+python code/tri_char_rnn.py --token_size=3 --num_unrollings=5 --num_steps=10000 > f_3_5.txt 
+python code/tri_char_rnn.py --token_size=3 --num_unrollings=15 --num_steps=10000 > f_3_15.txt
+
+python code/tri_char_rnn.py --token_size=2 --num_unrollings=10 --num_steps=10000 > f_2_10.txt
+python code/tri_char_rnn.py --token_size=2 --num_unrollings=5 --num_steps=10000 > f_2_5.txt 
+python code/tri_char_rnn.py --token_size=2 --num_unrollings=15 --num_steps=10000 > f_2_15.txt
+

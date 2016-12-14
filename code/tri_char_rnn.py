@@ -2,8 +2,10 @@
 Credit: https://github.com/kensk8er/udacity/blob/master/assignment_6.py#L218
 """
 from __future__ import print_function
+import click
 import numpy as np
 import tensorflow as tf
+import time
 
 from code.helpers import maybe_download, read_data, CHARACTER_SIZE, BatchGenerator, ngram2id, id2_ngram, sample_distribution, random_distribution, log_prob
 
@@ -22,13 +24,21 @@ def get_ngrams(probabilities, token_size):
     return [id2_ngram(bigram_id, n_chars=token_size) for bigram_id in np.argmax(probabilities, 1)]
 
 
-def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedding_dimension=128,
+@click.command()
+@click.option('--token-size', default=3)
+@click.option('--num-unrollings', default=10)
+@click.option('--num-steps', default=10)
+@click.option('--num-nodes', default=10)
+def main(token_size, num_unrollings, num_steps, num_nodes, embedding_dimension=128,
          dropout_probability=0.5, batch_size=64, valid_size=1000):
+    save_path = 'logs_{}_{}'.format(token_size, num_unrollings)
+    import os
+    if not os.path.exists(save_path):
+        os.path.makedirs(save_path)
 
     vocab_size = CHARACTER_SIZE ** token_size
     filename = maybe_download('text8.zip', 31344016)
     text = read_data(filename)
-
     embedding_dimension = min(vocab_size, embedding_dimension)
     train_text = text[valid_size:]
     valid_text = text[:valid_size]
@@ -37,6 +47,7 @@ def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
     valid_batches = BatchGenerator(valid_text, 1, 1, token_size=token_size, vocab_size=vocab_size)
     # simple LSTM Model
     graph = tf.Graph()
+    start_time = time.time()
     with graph.as_default():
         # Parameters for input, forget, cell state, and output gates
         W_lstm = tf.Variable(tf.truncated_normal([embedding_dimension + num_nodes, num_nodes * 4]))
@@ -117,6 +128,7 @@ def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
     #  RUN THE MODEL
     with tf.Session(graph=graph) as session:
         tf.initialize_all_variables().run()
+        writer = tf.train.SummaryWriter(save_path, session.graph)
         print('Initialized')
         mean_loss = 0
 
@@ -130,6 +142,7 @@ def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
 
             _, l, predictions, lr = session.run([optimizer, loss, train_prediction, learning_rate], feed_dict=feed_dict)
 
+            writer.add_summary(tf.scalar_summary('Learning Rate', lr).eval(), step)
             mean_loss += l
 
             if step % SUMMARY_FREQUENCY == 0:
@@ -141,7 +154,9 @@ def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
 
                 mean_loss = 0
                 labels = np.concatenate([batch for batch in batches[1:]])
-                print('Minibatch perplexity: %.2f' % float(np.exp(log_prob(predictions, labels))))
+                train_perp = float(np.exp(log_prob(predictions, labels)))
+                print('Minibatch perplexity: %.2f' % train_perp)
+                tf.scalar_summary('Minibatch Perplexity', train_perp)
 
                 if step % (SUMMARY_FREQUENCY * 10) == 0:
                     # Generate some samples.
@@ -171,8 +186,11 @@ def main(token_size=2, num_unrollings=10, num_nodes=128, num_steps=30001, embedd
                     valid_batch = valid_batches.next()
                     predictions = sample_prediction.eval({sample_input: np.where(valid_batch[0] == 1)[1].reshape((-1, 1))})
                     valid_log_prob = valid_log_prob + log_prob(predictions, valid_batch[1])
-                print('Validation set perplexity: %.2f' % float(np.exp(valid_log_prob / valid_size)))
+                valid_perp = float(np.exp(valid_log_prob / valid_size))
+                tf.scalar_summary('Validation Perplexity', valid_perp)
 
+                print('Validation set perplexity: %.2f' % valid_perp)
+    print('took: {}'.format(time.time()-start_time))
 
 if __name__ == '__main__':
     main()
