@@ -71,7 +71,7 @@
 \begin_body
 
 \begin_layout Title
-LSTM with different Encodings
+Learning Text Sequences with Different Encodings
 \end_layout
 
 \begin_layout Subsubsection*
@@ -88,6 +88,8 @@ We wrote an LSTM implementation that parametrizes the number of characters
  on unigrams; the text that the model generates after 10 minutes on a MacBook
  Pro is more reasonable when the model is trained on the 27 element one-hot
  representation of unigrams.
+ Tensorflow code is available at github.com/sshleifer/lstm/blob/master/code/tri_c
+har_rnn.py.
 \end_layout
 
 \begin_layout Subsubsection*
@@ -158,17 +160,42 @@ The size of the vector needed to represent the one-hot-encoding of each
 \end_layout
 
 \begin_layout Subsubsection*
-Results
+Experiment Results
 \end_layout
 
 \begin_layout Standard
-Training on trigrams is very slow and doesn't work very well.
- In the two experiments we ran, we let a trigram model run for 1000 steps,
- first with 5 unrollings and then with 10 unrollings.
+Overall, smaller n encodings generated fewer misspellings and more reasonable
+ text than larger n models trained for the same amount of time.
+ In the two trigram experiments we ran, we let a trigram model run for 1000
+ steps, first with 5 unrollings and then with 10 unrollings.
+ Gradients for all models were clipped at 5.
  The 5 unrollings model took 8 minutes compared with 15 and scored roughly
  the same perplexity on the 1000 character validation set, but the text
  generated is not english.
- The major problem seems to be that the words end up being very long.
+ One major problem seems to be that the words end up being very long, but
+ still since 
+\begin_inset Quotes eld
+\end_inset
+
+tfbyti
+\begin_inset Quotes erd
+\end_inset
+
+ was outputted we know we have a trigram with either tf or fb, both of which
+ seem very unlikely.
+ 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Quotes eld
+\end_inset
+
+istfbytio ane nvennumguasfghellutof s dntrpubic sr t oy atwo deothen o zem
+ ionype imonorgu
+\begin_inset Quotes erd
+\end_inset
+
+ - Trigram LSTM trained for 15 minutes.
 \end_layout
 
 \begin_layout Standard
@@ -176,30 +203,63 @@ Bigram models were more succesful, largely because they ran 7x faster than
  trigrams per batch.
  The difference here might be the time and loss associated with training
  the emedding.
+ 
 \end_layout
 
-\begin_layout Quotation
-mkyekkmal fut tthiuhjor ovqtwgt oenttordborenbzuarbwaq hacenadwageivgtheforhwd
- hih t thonawix uz thsgsolizxajecthikmrvedwarctr maas aaaconpujaursidhe
- istfbytio ane nvennumguasfghellutof s dntrpubic sr t oy atwo deothen o
- zem ionype imonorgu - Trigram RNN trained for 15 minutes.
+\begin_layout Standard
+The most succesful, however, were unigram based models, which, within five
+ minutes of birth could output more than 50% real english words (albeit
+ shorter ones).
+ With no embedding cost and a lower dimensionality input vectors (27), these
+ models were able to complete 1000 steps in 20 seconds compared to 120 seconds
+ for Bigrams and 15 minutes (900 seconds) for trigrams.
+\end_layout
+
+\begin_layout Quote
+\begin_inset Quotes eld
+\end_inset
+
+and theory boyer the zer ther one nine seven two zero zero peramented strong
+ avaud blows than user rescre hter but election the jaries a consiletist
+ famoust studrum amerapests pebhes to
+\begin_inset Quotes erd
+\end_inset
+
+ - Unigram Model after 5 minutes training
+\end_layout
+
+\begin_layout Standard
+If we increase the number of unrollings (how far errors can backpropagate)
+ from 10 each iteration of the model involves a bit more learning and takes
+ a bit more time, so we must compare performance per minute and hope that
+ model improvement is roughly linear.
+ With 3 unrollings, the unigram gets to 7.34 validation perplexity in the
+ first minute.
+ With 10 unrollings, 4.78 and with 20 unrollings, 4.93, thereby suggesting
+ that 10 unrollings is somewhere near the optimum for our architecture if
+ the first minute is a good proxy for the rest of training.
 \end_layout
 
 \begin_layout Subsubsection*
-Next Steps
+Conclusion and Next Steps
 \end_layout
 
-\begin_layout Enumerate
-Modify WordRNN to generate text
-\end_layout
-
-\begin_layout Enumerate
-Experiment with using the unigram model to measure the perplexity of other
- models' generated text, for easier comparisons.
-\end_layout
-
-\begin_layout Enumerate
-Allow more time for training.
+\begin_layout Standard
+Unfortunately, getting acquainted with Tensorflow and implementing the text-gene
+rating model took 15 hours, and an additional 5 hours were spent trying
+ to get a word based model to generate text.
+ For this reason, we have not explored very far past the surface level results:
+ that the unigram model produces more reasonable text than the bigram model
+ which produces more reasonable text than the trigram model.
+ Some future things to try include a) reducing or increasing the dimension
+ of the embedding for the trigram/bigram model, which would allow me to
+ test whether that is really the slow part, b) finding some word-based RNN
+ code on the internet that generates text and see how it compares, c) experiment
+ing with using the unigram model to measure the perplexity of the text generated
+ by the other models, thereby allowing one metric to score each model's
+ performance.
+ d) repeat this set of experiments except let every model train for an hour
+ or two.
 \end_layout
 
 \begin_layout Bibliography
@@ -210,7 +270,18 @@ key "LSTM BlogPost"
 
 \end_inset
 
-<table>
+
+\end_layout
+
+\begin_layout Bibliography
+\begin_inset CommandInset bibitem
+LatexCommand bibitem
+label "https://github.com/tensorflow/tensorflow"
+key "Tensorflow Documentation"
+
+\end_inset
+
+
 \end_layout
 
 \end_body
