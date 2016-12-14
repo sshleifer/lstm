@@ -34,7 +34,7 @@ def main(token_size, num_unrollings, num_steps, num_nodes, embedding_dimension=1
     save_path = 'logs_{}_{}'.format(token_size, num_unrollings)
     import os
     if not os.path.exists(save_path):
-        os.path.makedirs(save_path)
+        os.makedirs(save_path)
 
     vocab_size = CHARACTER_SIZE ** token_size
     filename = maybe_download('text8.zip', 31344016)
@@ -156,7 +156,6 @@ def main(token_size, num_unrollings, num_steps, num_nodes, embedding_dimension=1
                 labels = np.concatenate([batch for batch in batches[1:]])
                 train_perp = float(np.exp(log_prob(predictions, labels)))
                 print('Minibatch perplexity: %.2f' % train_perp)
-                tf.scalar_summary('Minibatch Perplexity', train_perp)
 
                 if step % (SUMMARY_FREQUENCY * 10) == 0:
                     # Generate some samples.
@@ -187,10 +186,10 @@ def main(token_size, num_unrollings, num_steps, num_nodes, embedding_dimension=1
                     predictions = sample_prediction.eval({sample_input: np.where(valid_batch[0] == 1)[1].reshape((-1, 1))})
                     valid_log_prob = valid_log_prob + log_prob(predictions, valid_batch[1])
                 valid_perp = float(np.exp(valid_log_prob / valid_size))
-                tf.scalar_summary('Validation Perplexity', valid_perp)
-
+                writer.add_summary(tf.scalar_summary('Minibatch Perplexity', train_perp).eval(), step)
+                writer.add_summary(tf.scalar_summary('Validation Perplexity', valid_perp).eval(), step)
                 print('Validation set perplexity: %.2f' % valid_perp)
-    print('took: {}'.format(time.time()-start_time))
+    print('took: {}'.format(time.time() - start_time))
 
 if __name__ == '__main__':
     main()
